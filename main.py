@@ -10,6 +10,7 @@ from sqlalchemy.orm import sessionmaker
 from Table.Base import Base  # Import the shared Base
 from Table.Store import Store
 from Table.PurchasingTracking import PurchasingTrackingTable
+from Table.PurchasingTrackingDayByDay import PurchasingTrackingDayWiseTable
 from Table.Selling import Selling
 from Table.Orginization import Orginization
 from Table.Inventory import Inventory
@@ -31,26 +32,27 @@ engine = create_engine(f"mysql+pymysql://{username}:{password}@{hostname}:{port}
 Session = sessionmaker(bind=engine)  # `engine` is your database connection
 session = Session()
 
-try:
-    records = session.query(PurchasingTrackingTable).all()  # Fetch all rows
-    if not records:
-        print("No records found in purchasingTrackingTables.")
-    else:
-        for record in records:
-            print(f"Month: {record.month}, Year: {record.year}, Revenue: {record.revenue}, Loss: {record.loss}")
-except Exception as e:
-    print(f"Error querying purchasingTrackingTables: {e}")
-finally:
-    session.close()
+# try:
+#     records = session.query(PurchasingTrackingTable).all()  # Fetch all rows
+#     if not records:
+#         print("No records found in purchasingTrackingTables.")
+#     else:
+#         for record in records:
+#             print(f"Month: {record.month}, Year: {record.year}, Revenue: {record.revenue}, Loss: {record.loss}")
+# except Exception as e:
+#     print(f"Error querying purchasingTrackingTables: {e}")
+# finally:
+#     session.close()
 
-try:
-    with engine.connect() as connection:
-        print("Connection to MySQL successful!")
-except Exception as e:
-    print("Failed to connect to MySQL:", e)
+# try:
+#     with engine.connect() as connection:
+#         print("Connection to MySQL successful!")
+# except Exception as e:
+#     print("Failed to connect to MySQL:", e)
 ###
 
 
+monthNameConfig = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 app = FastAPI()
 
@@ -131,8 +133,16 @@ class StoreAnalyticObj:
     shopName: str
     last24hrsRevenue: Decimal
     last24hrsLoss: Decimal
+    last24hrsProfit: Decimal
     last7DaysRevenue: Decimal
     last7DaysLoss: Decimal
+    last7DaysProfit: Decimal
+    last30DaysRevenue: Decimal
+    last30DaysLoss: Decimal
+    last30DaysProfit: Decimal
+    lastOneYearRevenue: Decimal
+    lastOneYearLoss: Decimal
+    lastOneYearProfit: Decimal
     sellingItemsOverLast7Days: list[SellingItemObj]
     lowStockItemList: list[LowStockItemObj]
     currentInventoryStatus: list[InventoryStatus]
@@ -141,12 +151,14 @@ class StoreAnalyticObj:
         return {
             "shopId": self.shopId,
             "shopName": self.shopName,
-            # Convert Decimal to float
             "last24hrsRevenue": float(self.last24hrsRevenue),
             "last24hrsLoss": float(self.last24hrsLoss),
             "last7DaysRevenue": float(self.last7DaysRevenue),
             "last7DaysLoss": float(self.last7DaysLoss),
-            # Serialize nested objects
+            "last30DaysRevenue": float(self.last30DaysRevenue),
+            "last30DaysLoss": float(self.last30DaysLoss),
+            "lastOneYearRevenue": float(self.lastOneYearRevenue),
+            "lastOneYearLoss": float(self.lastOneYearLoss),
             "sellingItemsOverLast7Days": [item.to_dict() for item in self.sellingItemsOverLast7Days],
             "lowStockItemList": [item.to_dict() for item in self.lowStockItemList],
             "currentInventoryStatus": [item.to_dict() for item in self.currentInventoryStatus],
@@ -218,140 +230,125 @@ def analytic_newspaper_shopowner_endpoint(req:AnalyticNewPaperInput) :
 # def analytic_newspaper_shopowner_endpoint() :
     organization_id = req.organization_id
     # organization_id = 1
-    shopRecords = session.query(Store).filter(Store.organizationId == organization_id).all()
+    storeRecords = session.query(Store).filter(Store.organizationId == organization_id).all()
     arr : list[StoreAnalyticObj]=  []
-    for shop in shopRecords :
-        obj = StoreAnalyticObj()
-        obj.shopId = shop.id
-        obj.shopName = shop.name
-        obj.last24hrsRevenue=0
-        obj.last24hrsLoss=0
-        obj.last7DaysLoss=0
-        obj.last7DaysRevenue=0
-        obj.sellingItemsOverLast7Days = []
-        obj.lowStockItemList = []
-        obj.currentInventoryStatus = []
-        print(f"Shop ID : {shop.id}")
-        now = datetime.now()
-        last_24_hours = now - timedelta(hours=24)
-        last_24hrs_revenue = (
-            session.query(
-                func.sum(PurchasingTrackingTable.revenue)
-            )
-            .filter(
-                and_(
-                    PurchasingTrackingTable.storeId == shop.id,  # Match shop ID
-                    PurchasingTrackingTable.createdAt >= last_24_hours,  # Records in the last 24 hours
-                )
-            )
-            .scalar()  # Retrieve the sum value as a scalar
-        )
-        last_24hrs_loss = (
-            session.query(
-                func.sum(PurchasingTrackingTable.loss)
-            )
-            .filter(
-                and_(
-                    PurchasingTrackingTable.storeId == shop.id,  # Match shop ID
-                    PurchasingTrackingTable.createdAt >= last_24_hours,  # Records in the last 24 hours
-                )
-            )
-            .scalar()  # Retrieve the sum value as a scalar
-        )
-        if type(last_24hrs_revenue) is float and last_24hrs_revenue > 0:
-            obj.last24hrsRevenue = last_24hrs_revenue
-        if type(last_24hrs_loss) is float and last_24hrs_loss > 0:
-            obj.last24hrsLoss = last_24hrs_loss
-        
-        last_7_days = now - timedelta(days=7)
-        last_7_days_revenue = (
-            session.query(
-                func.sum(PurchasingTrackingTable.revenue)
-            )
-            .filter(
-                and_(
-                    PurchasingTrackingTable.storeId == shop.id,  # Match shop ID
-                    PurchasingTrackingTable.createdAt >= last_7_days,  # Records in the last 24 hours
-                )
-            )
-            .scalar()  # Retrieve the sum value as a scalar
-        )
-        last_7_days_loss = (
-            session.query(
-                func.sum(PurchasingTrackingTable.loss)
-            )
-            .filter(
-                and_(
-                    PurchasingTrackingTable.storeId == shop.id,  # Match shop ID
-                    PurchasingTrackingTable.createdAt >= last_7_days,  # Records in the last 24 hours
-                )
-            )
-            .scalar()  # Retrieve the sum value as a scalar
-        )
-        if type(last_7_days_revenue) is float and last_7_days_revenue > 0:
-            obj.last7DaysRevenue = last_7_days_revenue
-        if type(last_7_days_loss) is float and last_7_days_loss > 0:
-            obj.last7DaysLoss = last_7_days_loss
-        
-
-        selling_records = session.query(Selling).filter(and_( Selling.storeId == shop.id) and Selling.dateOfSale >= last_7_days).all()
-        for selling in selling_records :
-            prd_details = session.query(Inventory).filter(Inventory.id == selling.inventoryId).first()
-            itemObj = SellingItemObj()
-            itemObj.itemName = prd_details.productName
-            itemObj.totalSoldQuantity = selling.quantitySold
-            itemObj.totalProfitGenrated = selling.unitSellingPrice - (prd_details.costPrice * selling.quantitySold)
-            obj.sellingItemsOverLast7Days.append(itemObj)
-        
-        low_stock_items = session.query(Inventory).filter(and_( Inventory.lowAlertLimit != None , Inventory.lowAlertLimit > Inventory.isInStock , Inventory.id.in_(
-            session.query(Selling.inventoryId).filter(Selling.storeId == shop.id)
-        ))).all()
-        for item in low_stock_items :
-            lowStockObj = LowStockItemObj()
-            lowStockObj.itemName = item.productName
-            total_sold_quantity = session.query(func.sum(Selling.quantitySold)).filter(and_( Selling.storeId == shop.id , Selling.inventoryId == item.id)).scalar()
-            if total_sold_quantity is None :
-                total_sold_quantity = 0
-            current_stock_quantity = max(0, 100 - total_sold_quantity)  # Assuming initial stock of 100 for simplicity
-            lowStockObj.currentStockQuantity = current_stock_quantity
-            lowStockObj.lowAlertLimit = item.lowAlertLimit
-            obj.lowStockItemList.append(lowStockObj)
-        
-        current_stock_quantity = session.query(Inventory).filter(Inventory.id.in_(
-            session.query(Selling.inventoryId).filter(Selling.storeId == shop.id)
-        )).all()
-        for item in current_stock_quantity :
-            inventoryStatusObj = InventoryStatus()
-            inventoryStatusObj.itemName = item.productName
-            total_sold_quantity = session.query(func.sum(Selling.quantitySold)).filter(and_( Selling.storeId == shop.id , Selling.inventoryId == item.id)).scalar()
-            if total_sold_quantity is None :
-                total_sold_quantity = 0
-            current_stock_quantity = max(0, 100 - total_sold_quantity)  # Assuming initial stock of 100 for simplicity
-            inventoryStatusObj.currentStockQuantity = current_stock_quantity
-            inventoryStatusObj.isInStock = item.isInStock
-            inventoryStatusObj.lowAlertLimit = item.lowAlertLimit
-            obj.currentInventoryStatus.append(inventoryStatusObj)
-        print(f"Last 24hrs Revenue : {obj.last24hrsRevenue} , Last 24hrs Loss : {obj.last24hrsLoss} , Last 7 Days Revenue : {obj.last7DaysRevenue} , Last 7 Days Loss : {obj.last7DaysLoss} ")
-        for sellingItem in obj.sellingItemsOverLast7Days :
-            print(f"Selling Item Name : {sellingItem.itemName} , Total Sold Quantity : {sellingItem.totalSoldQuantity} , Total Profit Generated : {sellingItem.totalProfitGenrated} ")
-        for lowStockItem in obj.lowStockItemList :
-            print(f"Low Stock Item Name : {lowStockItem.itemName} , Current Stock Quantity : {lowStockItem.currentStockQuantity} , Low Alert Limit : {lowStockItem.lowAlertLimit} ")
-        for inventoryStatus in obj.currentInventoryStatus :
-            print(f"Inventory Item Name : {inventoryStatus.itemName} , Current Stock Quantity : {inventoryStatus.currentStockQuantity} , Is In Stock : {inventoryStatus.isInStock} , Low Alert Limit : {inventoryStatus.lowAlertLimit} ")
-        arr.append(obj)
-
-    data_to_serialize = [store_obj.to_dict() for store_obj in arr]
     message_history = [
         {
             "role": "system",
             "content": System_Prompt_ShopOwner_Dashboard,
         }
     ]
+    for store in storeRecords:
+        obj = StoreAnalyticObj()
+        obj.shopId = store.id
+        obj.shopName = store.name
+        obj.last24hrsRevenue = Decimal(0)
+        obj.last24hrsLoss = Decimal(0)
+        obj.last24hrsProfit = Decimal(0)
+        obj.last7DaysRevenue = Decimal(0)
+        obj.last7DaysLoss = Decimal(0)
+        obj.last7DaysProfit = Decimal(0)
+        obj.last30DaysRevenue = Decimal(0)
+        obj.last30DaysLoss = Decimal(0)
+        obj.last30DaysProfit = Decimal(0)
+        obj.lastOneYearRevenue = Decimal(0)
+        obj.lastOneYearLoss = Decimal(0)
+        obj.lastOneYearProfit = Decimal(0)
+        obj.sellingItemsOverLast7Days = []
+        obj.lowStockItemList = []
+        obj.currentInventoryStatus = []
 
+        # 24 hrs revenue , profit and loss
+        now = datetime.now()
+        last_24_hours = now - timedelta(hours=24)
+        day = last_24_hours.day
+        month = monthNameConfig[last_24_hours.month]
+        year = last_24_hours.year
+
+        last_24_hours_revenu = session.query(func.sum(PurchasingTrackingDayWiseTable.revenue)).filter(and_(PurchasingTrackingDayWiseTable.day == day , PurchasingTrackingDayWiseTable.storeId == store.id , PurchasingTrackingDayWiseTable.month == month , PurchasingTrackingDayWiseTable.year == year )).scalar()
+        last_24_hours_loss = session.query(func.sum(PurchasingTrackingDayWiseTable.loss)).filter(and_(PurchasingTrackingDayWiseTable.day == day , PurchasingTrackingDayWiseTable.storeId == store.id , PurchasingTrackingDayWiseTable.month == month , PurchasingTrackingDayWiseTable.year == year )).scalar()
+
+        if type(last_24_hours_revenu) is Decimal | float:
+            obj.last24hrsRevenue = last_24_hours_revenu
+        if type(last_24_hours_loss) is Decimal | float:
+            obj.last24hrsLoss = last_24_hours_loss
+        if type(last_24_hours_revenu) is Decimal | float and type(last_24_hours_loss) is Decimal | float:
+            obj.last24hrsProfit = last_24_hours_revenu - last_24_hours_loss
+        
+        # 7 days revenue , profit and loss
+        last_7_days = now - timedelta(days=7)
+        last_7_days_revenu = session.query(func.sum(PurchasingTrackingDayWiseTable.revenue)).filter(and_(PurchasingTrackingDayWiseTable.storeId == store.id , PurchasingTrackingDayWiseTable.month == month , PurchasingTrackingDayWiseTable.year == year , PurchasingTrackingDayWiseTable.createdAt >= last_7_days)).scalar()
+        last_7_days_loss = session.query(func.sum(PurchasingTrackingDayWiseTable.loss)).filter(and_(PurchasingTrackingDayWiseTable.storeId == store.id , PurchasingTrackingDayWiseTable.month == month , PurchasingTrackingDayWiseTable.year == year , PurchasingTrackingDayWiseTable.createdAt >= last_7_days)).scalar() 
+        if last_7_days_revenu:
+            obj.last7DaysRevenue = last_7_days_revenu
+        if last_7_days_loss:
+            obj.last7DaysLoss = last_7_days_loss
+        if last_7_days_revenu and last_7_days_loss :
+            obj.last7DaysProfit = last_7_days_revenu - last_7_days_loss
+        
+        print(" Profit for last 7 days ",obj.last7DaysProfit , " \n Revenue ", obj.last7DaysRevenue , " \n Loss " , obj.last7DaysLoss, " \n store id ", store.id , " \n date ", last_7_days , " month ", month , " year ", year)
+        
+        #  30 days revenue , profit and loss
+        last_30_date = now - timedelta(days=30)
+        last_30_days_revenu = session.query(func.sum(PurchasingTrackingTable.revenue)).filter(and_(PurchasingTrackingTable.storeId == store.id , PurchasingTrackingTable.createdAt >= last_30_date)).scalar()
+        last_30_days_loss = session.query(func.sum(PurchasingTrackingTable.loss)).filter(and_(PurchasingTrackingTable.storeId == store.id , PurchasingTrackingTable.createdAt >= last_30_date)).scalar()
+        if last_30_days_revenu:
+            obj.last30DaysRevenue = last_30_days_revenu
+        if last_30_days_loss:
+            obj.last30DaysLoss = last_30_days_loss
+        if last_30_days_revenu and last_30_days_loss:
+            obj.last30DaysProfit = last_30_days_revenu - last_30_days_loss
+
+        #  1 year revenue , profit and loss
+        last_one_year_date = now - timedelta(days=365)
+        last_one_year_revenu = session.query(func.sum(PurchasingTrackingTable.revenue)).filter(and_(PurchasingTrackingTable.storeId == store.id , PurchasingTrackingTable.createdAt >= last_one_year_date)).scalar()
+        last_one_year_loss = session.query(func.sum(PurchasingTrackingTable.loss)).filter(and_(PurchasingTrackingTable.storeId == store.id , PurchasingTrackingTable.createdAt >= last_one_year_date)).scalar()
+        print("Last one year revenu ",last_one_year_revenu)
+        if last_one_year_revenu:
+            obj.lastOneYearRevenue = last_one_year_revenu
+        if last_one_year_loss:
+            obj.lastOneYearLoss = last_one_year_loss
+        if last_one_year_revenu and last_one_year_loss:
+            obj.lastOneYearProfit = last_one_year_revenu - last_one_year_loss
+       
+        # Selling items over last 7 days
+        selling_items = session.query(Selling).filter(and_(Selling.storeId == store.id , Selling.dateOfSale >= last_7_days)).all()
+        for item in selling_items:
+            selling_item_obj = SellingItemObj()
+            selling_item_obj.itemName = session.query(Inventory).filter(Inventory.id == item.inventoryId).first().productName
+            selling_item_obj.totalSoldQuantity = item.quantitySold
+            selling_item_obj.totalProfitGenrated = Decimal(item.unitSellingPrice) * Decimal(item.quantitySold)
+            obj.sellingItemsOverLast7Days.append(selling_item_obj)
+        
+        # Low stock item list
+        low_stock_items = session.query(Inventory).filter(and_(Inventory.storeId == store.id , Inventory.isInStock <= Inventory.lowAlertLimit)).all()
+        for item in low_stock_items:
+            low_stock_item_obj = LowStockItemObj()
+            low_stock_item_obj.itemName = item.productName
+            low_stock_item_obj.currentStockQuantity = item.isInStock
+            low_stock_item_obj.lowAlertLimit = item.lowAlertLimit
+            obj.lowStockItemList.append(low_stock_item_obj)
+        
+        # Current inventory status
+        inventory_items = session.query(Inventory).filter(Inventory.storeId == store.id).all()
+        for item in inventory_items:
+            inventory_status_obj = InventoryStatus()
+            inventory_status_obj.itemName = item.productName
+            inventory_status_obj.currentStockQuantity = item.isInStock
+            inventory_status_obj.isInStock = item.isInStock > 0
+            inventory_status_obj.lowAlertLimit = item.lowAlertLimit
+            obj.currentInventoryStatus.append(inventory_status_obj)
+
+        arr.append(obj)
+
+    # data_to_serialize = [store_obj.to_dict() for store_obj in arr]
+    data_to_serialize = [store_obj.to_dict() for store_obj in arr]
     message_history.append({
         "role": "user",
         "content": f"Provide an analytic newspaper for my shop with the following details: {json.dumps(data_to_serialize, cls=DecimalEncoder)}"
     })
+
+    print("Obj  ",data_to_serialize)
     # Add to OpenAI messages
     
     while True :
@@ -370,7 +367,7 @@ def analytic_newspaper_shopowner_endpoint(req:AnalyticNewPaperInput) :
             print(f"Response 🤖 ",response.choices[0].message.content)
         else:
             print(f"Starting.... ",response.choices[0].message.content)
- 
+    return {"response": "Something Went Wrong"}
 
         
 

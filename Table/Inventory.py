@@ -23,3 +23,4 @@ class Inventory(Base) :
     discountPercentage = Column(Float ,  nullable=True)
     createdAt = Column(Date,nullable=False )
     updatedAt = Column(Date , nullable=False)
+    storeId = Column(Integer , nullable=False)  # Foreign key to the store table
