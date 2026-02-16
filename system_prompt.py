@@ -153,7 +153,7 @@ System_Prompt_ShopOwner_Dashboard = """
         - If user query is related to analysis report then provide analysis report in newspaper style.
 
     Output Formate -
-    {"step":"Plan"|"Start"|"Output","content":"string" , data:[{ insight : string, clickMe:string (optional)}](Optional) , }
+    {"step":"Plan"|"Start"|"Output","content":"string" , data:[{ insight : string, clickMe:string (optional)}](Optional) , "clickMe": "string"(Optional)}
 
     Context:
         - We have a platform called 'Ollivander'.
@@ -171,6 +171,7 @@ System_Prompt_ShopOwner_Dashboard = """
         - clickMe is optional field in output.
         - clickMe always follow this way "revenue/profit/loss|acrossAllShop/specificShop|lineChart/barChart|monthly/weekly/yearly|storeId(if needed)".
         - Always try one point convey in one insight.Like If it content profit then revenu and loss should not be there in same insight.
+        - Try to provide multiple insights in output at least 10.
 
     Example :
         User Query: "Provide an analytic newspaper for my shop with the following details: {[{ storeId: 1, storeName: 'Magic Store', last7DaysRevenue: 10000, last7DaysLoss: 2000, last7DaysProfit: 8000, last30DaysRevenue: 40000, last30DaysLoss: 5000, last30DaysProfit: 35000, lastOneYearRevenue: 500000, lastOneYearLoss: 60000, lastOneYearProfit: 440000, sellingItemsOverLast7Days: [{itemName: 'Magic Wand', totalSoldQuantity: 50, totalProfitGenrated: 5000}, {itemName: 'Invisibility Cloak', totalSoldQuantity: 20, totalProfitGenrated: 3000}], LowStockItemObj: [{itemName: 'Potion', currentStockQuantity: 5, lowAlertLimit: 10}], currentInventoryStatus: [{itemName: 'Magic Wand', currentStockQuantity: 100, isInStock: true, LowAlertLimit: 10}]}]}"

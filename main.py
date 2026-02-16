@@ -13,10 +13,13 @@ from Table.PurchasingTracking import PurchasingTrackingTable
 from Table.PurchasingTrackingDayByDay import PurchasingTrackingDayWiseTable
 from Table.Selling import Selling
 from Table.Orginization import Orginization
+from Table.User import UsersTable
 from Table.Inventory import Inventory
 from sqlalchemy import func,and_
 from datetime import datetime, timedelta
 import json;
+from sqlalchemy import or_
+
 
 
 load_dotenv()
@@ -224,7 +227,6 @@ def welcome_message_endpoint(req: UserInput):
 
     return {"response": "Something Went Wrong"}
 
-
 @app.post("/analytic-newspaper-shopowner")
 def analytic_newspaper_shopowner_endpoint(req:AnalyticNewPaperInput) :
 # def analytic_newspaper_shopowner_endpoint() :
@@ -369,8 +371,344 @@ def analytic_newspaper_shopowner_endpoint(req:AnalyticNewPaperInput) :
             print(f"Starting.... ",response.choices[0].message.content)
     return {"response": "Something Went Wrong"}
 
+from typing import Optional
+
+def getUserDetails(location: Optional[str] = None, name_starts_with: Optional[str] = None):
+    """
+    Get users by location and/or name pattern
+    
+    Args:
+        location: Location to search (e.g., "Pune")
+        name_starts_with: First letter of name (e.g., "P")
+    """
+    # Start with base query
+    query = session.query(UsersTable)
+    
+    # Apply location filter if provided
+    if location:
+        query = query.filter(UsersTable.location.ilike(f"%{location}%"))
+    
+    # Apply name filter if provided
+    if name_starts_with:
+        query = query.filter(UsersTable.userName.ilike(f"{name_starts_with}%"))
+    
+    userDetails = query.all()
+    
+    return [
+        {
+            "userName": user.userName,
+            "userEmail": user.userEmail,
+            "location": user.location,
+            "id": user.id,
+            "userProfileImage": user.userProfileImage if hasattr(user, 'userProfileImage') else None
+        }
+        for user in userDetails
+    ]
+
+
+@app.post("/chat-group-info")
+def chatGroupInfoEndPoint(user_input: str):
+    System_Prompt_Group_Info = """
+You are an expert AI assistant specialized in finding users based on their location and name.
+You work with Start, Plan, Tool, Observe, and Output steps.
+
+Rules:
+- Strictly follow JSON output format.
+- Only run one step at a time.
+- For every tool call, wait for the Observe step (tool output).
+- Sequence: Start → Plan → Tool → Observe → Output
+
+Available TOOL:
+- getUserDetails: Get user details based on location and/or name pattern.
+  Parameters:
+  * location (optional): Partial or full location name (e.g., "Pune", "Mumbai")
+  * name_starts_with (optional): First letter(s) of username (e.g., "P", "H", "Pa")
+
+Your Capabilities:
+1. Find users by LOCATION: "users in Pune"
+2. Find users by NAME: "users whose name starts with P"
+3. Find users by BOTH: "users in Pune whose name starts with H"
+
+Task Flow:
+1. Extract location and/or name pattern from user query
+2. Call getUserDetails tool with appropriate parameters
+3. Return user details in specified format
+
+Output Format (Success):
+[
+  {
+    "userName": "John Doe",
+    "userEmail": "john@example.com",
+    "location": "Pune",
+    "id": "user123",
+    "userProfileImage": "image_url"
+  }
+]
+
+Output Format (Out of Scope):
+[
+  {
+    "message": "Sorry, I can only provide user information based on location and/or name. Please ask about users in a specific location or with a specific name pattern."
+  }
+]
+
+Example 1 - Location Query:
+User: "Show me users in Pune"
+
+Response Steps:
+{
+  "step": "Start",
+  "content": "User wants to find users in Pune"
+}
+{
+  "step": "Plan",
+  "content": "Extract location: 'Pune'. Call getUserDetails with location parameter."
+}
+{
+  "step": "Tool",
+  "content": {
+    "toolName": "getUserDetails",
+    "toolInput": {
+      "location": "Pune",
+      "name_starts_with": null
+    }
+  }
+}
+{
+  "step": "Observe",
+  "content": [
+    {
+      "userName": "Ayush Kumar",
+      "userEmail": "ayush@example.com",
+      "location": "Pune",
+      "id": "user1",
+      "userProfileImage": "img1.jpg"
+    }
+  ]
+}
+{
+  "step": "Output",
+  "content": [
+    {
+      "userName": "Ayush Kumar",
+      "userEmail": "ayush@example.com",
+      "location": "Pune",
+      "id": "user1",
+      "userProfileImage": "img1.jpg"
+    }
+  ]
+}
+
+Example 2 - Name Query:
+User: "Find users whose name starts with P"
+
+Response Steps:
+{
+  "step": "Start",
+  "content": "User wants users whose name starts with P"
+}
+{
+  "step": "Plan",
+  "content": "Extract name pattern: 'P'. Call getUserDetails with name_starts_with parameter."
+}
+{
+  "step": "Tool",
+  "content": {
+    "toolName": "getUserDetails",
+    "toolInput": {
+      "location": null,
+      "name_starts_with": "P"
+    }
+  }
+}
+{
+  "step": "Observe",
+  "content": [
+    {
+      "userName": "Priya Sharma",
+      "userEmail": "priya@example.com",
+      "location": "Mumbai",
+      "id": "user2",
+      "userProfileImage": "img2.jpg"
+    }
+  ]
+}
+{
+  "step": "Output",
+  "content": [
+    {
+      "userName": "Priya Sharma",
+      "userEmail": "priya@example.com",
+      "location": "Mumbai",
+      "id": "user2",
+      "userProfileImage": "img2.jpg"
+    }
+  ]
+}
+
+Example 3 - Combined Query:
+User: "Users in Pune whose name starts with H"
+
+Response Steps:
+{
+  "step": "Start",
+  "content": "User wants users in Pune with names starting with H"
+}
+{
+  "step": "Plan",
+  "content": "Extract location: 'Pune' and name pattern: 'H'. Call getUserDetails with both parameters."
+}
+{
+  "step": "Tool",
+  "content": {
+    "toolName": "getUserDetails",
+    "toolInput": {
+      "location": "Pune",
+      "name_starts_with": "H"
+    }
+  }
+}
+{
+  "step": "Observe",
+  "content": [
+    {
+      "userName": "Harsh Patel",
+      "userEmail": "harsh@example.com",
+      "location": "Pune",
+      "id": "user3",
+      "userProfileImage": "img3.jpg"
+    }
+  ]
+}
+{
+  "step": "Output",
+  "content": [
+    {
+      "userName": "Harsh Patel",
+      "userEmail": "harsh@example.com",
+      "location": "Pune",
+      "id": "user3",
+      "userProfileImage": "img3.jpg"
+    }
+  ]
+}
+
+Example 4 - Out of Scope:
+User: "What's the weather today?"
+
+Response:
+{
+  "step": "Start",
+  "content": "User asking about weather - out of scope"
+}
+{
+  "step": "Plan",
+  "content": "This query is not related to user search. Provide polite out-of-scope message."
+}
+{
+  "step": "Output",
+  "content": [
+    {
+      "message": "Sorry, I can only provide user information based on location and/or name. Please ask about users in a specific location or with a specific name pattern."
+    }
+  ]
+}
+
+Important Notes:
+- Always extract both location and name_starts_with from query
+- If query has only location, set name_starts_with to null
+- If query has only name, set location to null
+- If query has both, use both parameters
+- Be flexible with phrasing: "starts with", "beginning with", "name like", etc.
+    """
+    
+    message_history = [
+        {
+            "role": "system",
+            "content": System_Prompt_Group_Info
+        }
+    ]
+    
+    message_history.append({"role": "user", "content": user_input})
+    
+    max_iterations = 10  # Prevent infinite loops
+    iteration = 0
+    
+    while iteration < max_iterations:
+        iteration += 1
         
-
-
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=message_history,
+                response_format={"type": "json_object"}
+            )
+            
+            result = json.loads(response.choices[0].message.content)
+            message_history.append({
+                "role": "assistant",
+                "content": response.choices[0].message.content
+            })
+            
+            current_step = result.get("step")
+            
+            if current_step == "Output":
+                print(f"✅ Output: {result.get('content')}")
+                return {
+                    "data": result.get("content"),
+                    "success": True
+                }
+            
+            elif current_step == "Plan":
+                print(f"🤖 Plan: {result.get('content')}")
+            
+            elif current_step == "Tool":
+                tool_info = result.get("content", {})
+                tool_name = tool_info.get("toolName")
+                tool_input = tool_info.get("toolInput", {})
+                
+                print(f"🔧 Calling Tool: {tool_name} with input: {tool_input}")
+                
+                # Execute the tool
+                if tool_name == "getUserDetails":
+                    location = tool_input.get("location")
+                    name_starts_with = tool_input.get("name_starts_with")
+                    
+                    # Call the function
+                    tool_result = getUserDetails(
+                        location=location,
+                        name_starts_with=name_starts_with
+                    )
+                    
+                    # Add observe step to history
+                    observe_message = {
+                        "step": "Observe",
+                        "content": tool_result
+                    }
+                    message_history.append({
+                        "role": "user",
+                        "content": json.dumps(observe_message)
+                    })
+                    
+                    print(f"📊 Tool Result: {tool_result}")
+                else:
+                    print(f"⚠️ Unknown tool: {tool_name}")
+            
+            elif current_step == "Start":
+                print(f"🚀 Start: {result.get('content')}")
+            
+            else:
+                print(f"❓ Unknown step: {current_step}")
+        
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "message": "Something went wrong"
+            }
     
-    
+    return {
+        "success": False,
+        "message": "Max iterations reached"
+    }
